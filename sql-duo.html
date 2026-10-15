@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CLI SQL — Aprende SQL desde cero</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: { sans: ["Nunito", "ui-sans-serif", "system-ui", "sans-serif"] },
+        colors: {
+          duo: { green: "#58cc02", greenDark: "#46a302", blue: "#1cb0f6", blueDark: "#1899d6", red: "#ff4b4b", redDark: "#e03e3e", yellow: "#ffc800", gray: "#e5e5e5" }
+        }
+      }
+    }
+  };
+</script>
+<style>
+  body { font-family: Nunito, sans-serif; }
+  .term { font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; }
+  .btn-3d { transition: transform .05s ease; }
+  .btn-3d:active { transform: translateY(3px); box-shadow: none !important; }
+  .fade-in { animation: fade .25s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .pulse-ring { animation: ring 1.6s infinite; }
+  @keyframes ring { 0%,100% { box-shadow: 0 0 0 0 rgba(28,176,246,.55); } 50% { box-shadow: 0 0 0 12px rgba(28,176,246,0); } }
+</style>
+</head>
+<body class="min-h-screen bg-slate-100 text-slate-800">
+  <div id="app"></div>
+
+<script>
+/* =========================================================
+   CLI SQL — Aprende SQL desde cero jugando.
+   Arquitectura: datos (teoría + retos) -> estado -> render.
+   Incluye un mini motor de base de datos relacional en memoria.
+   ========================================================= */
+
+/* ---------- 1. TEORÍA: cada tema con la estructura obligatoria ---------- */
+const THEORY = {
+  select: {
+    name: "SELECT", tagline: "Consulta filas de una tabla",
+    what: "SELECT es la instrucción para leer datos. 'SELECT * FROM tabla' devuelve todas las columnas y todas las filas de esa tabla.",
+    how: "El motor localiza la tabla, la recorre fila a fila y construye un resultado con las columnas pedidas. Cada fila del resultado tiene la misma estructura: mismas columnas y en el mismo orden.",
+    real: "Es la operación más común de SQL: consultar un catálogo, listar usuarios o revisar los pedidos del día.",
+    syntax: "SELECT * FROM tabla;",
+    examples: [{ cmd: "SELECT * FROM clientes", out: "id | nombre | ciudad | edad\n---+--------+--------+-----\n 1 | Ana    | Madrid | 28\n 2 | Luis   | Bogota | 34" }]
+  },
+  columnas: {
+    name: "columnas", tagline: "Elige solo lo que necesitas",
+    what: "Puedes pedir columnas concretas separándolas por comas: SELECT nombre, ciudad FROM clientes.",
+    how: "El motor hace una proyección: de cada fila toma únicamente las columnas indicadas y descarta el resto, así viajan menos datos.",
+    real: "Cuando una tabla tiene 40 columnas pero solo te interesan 2 para un informe.",
+    syntax: "SELECT col1, col2 FROM tabla;",
+    examples: [{ cmd: "SELECT nombre, ciudad FROM clientes", out: "nombre | ciudad\n-------+-------\nAna    | Madrid\nLuis   | Bogota" }]
+  },
+  where: {
+    name: "WHERE", tagline: "Filtra las filas",
+    what: "WHERE descarta las filas que no cumplen una condición. Solo pasan las que se evalúan como verdaderas.",
+    how: "El motor evalúa la condición en cada fila: si es verdadera la conserva y si no la descarta. Los comparadores son = , <> , < , > , <= y >=.",
+    real: "Ver solo los pedidos de un cliente concreto o los productos con stock bajo.",
+    syntax: "SELECT * FROM tabla WHERE condicion;",
+    examples: [{ cmd: "SELECT * FROM clientes WHERE ciudad = 'Madrid'", out: "id | nombre | ciudad | edad\n---+--------+--------+-----\n 1 | Ana    | Madrid | 28\n 3 | Marta  | Madrid | 22" }]
+  },
+  operadores: {
+    name: "AND / OR / NOT", tagline: "Combina condiciones",
+    what: "Con AND, OR y NOT unes varias condiciones. AND exige que se cumplan todas; OR, que se cumpla al menos una; NOT invierte el resultado.",
+    how: "El motor evalúa según la precedencia: primero los paréntesis, luego AND y por último OR.",
+    real: "Clientes de Madrid mayores de 20 años: ciudad = 'Madrid' AND edad > 20.",
+    syntax: "WHERE cond1 AND cond2   |   WHERE cond1 OR cond2",
+    examples: [{ cmd: "SELECT * FROM clientes WHERE ciudad='Madrid' AND edad>20", out: "id | nombre | ciudad | edad\n---+--------+--------+-----\n 1 | Ana    | Madrid | 28\n 3 | Marta  | Madrid | 22" }]
+  },
+  orderby: {
+    name: "ORDER BY", tagline: "Ordena los resultados",
+    what: "ORDER BY ordena las filas por una o más columnas, de forma ascendente (ASC) o descendente (DESC).",
+    how: "Tras filtrar, el motor ordena la lista comparando los valores de la columna clave. Por defecto usa ASC (de menor a mayor).",
+    real: "Ver los productos del más caro al más barato o los clientes por edad.",
+    syntax: "SELECT * FROM tabla ORDER BY columna [DESC];",
+    examples: [{ cmd: "SELECT nombre, precio FROM productos ORDER BY precio DESC", out: "nombre  | precio\n--------+-------\nMonitor | 199\nWebcam  | 59\nTeclado | 45.5\nRaton   | 19.9" }]
+  },
+  limit: {
+    name: "LIMIT", tagline: "Quédate con los primeros",
+    what: "LIMIT recorta el resultado para devolver solo las N primeras filas.",
+    how: "El motor genera el resultado completo y luego se queda con las primeras N filas. Combinado con ORDER BY obtienes el 'Top N'.",
+    real: "El podio: los 3 productos más vendidos del mes.",
+    syntax: "SELECT * FROM tabla ORDER BY col DESC LIMIT n;",
+    examples: [{ cmd: "SELECT nombre, precio FROM productos ORDER BY precio DESC LIMIT 2", out: "nombre  | precio\n--------+-------\nMonitor | 199\nWebcam  | 59" }]
+  },
+  distinct: {
+    name: "DISTINCT", tagline: "Valores únicos",
+    what: "DISTINCT elimina las filas repetidas del resultado.",
+    how: "El motor recuerda lo que ya ha visto y descarta los duplicados comparando la fila completa.",
+    real: "Saber en qué ciudades tenemos clientes, sin repetir ninguna.",
+    syntax: "SELECT DISTINCT columna FROM tabla;",
+    examples: [{ cmd: "SELECT DISTINCT ciudad FROM clientes", out: "ciudad\n-------\nMadrid\nBogota\nLima" }]
+  },
+  insert: {
+    name: "INSERT", tagline: "Añade filas",
+    what: "INSERT INTO inserta una fila nueva en una tabla.",
+    how: "El motor crea un objeto fila con los valores indicados, comprueba que encajen con las columnas y lo añade al final de la tabla.",
+    real: "Dar de alta un cliente nuevo o registrar un pedido.",
+    syntax: "INSERT INTO tabla VALUES (v1, v2, ...);",
+    examples: [{ cmd: "INSERT INTO clientes VALUES (6, 'Nora', 'Cali', 25)", out: "1 fila insertada." }]
+  },
+  update: {
+    name: "UPDATE", tagline: "Modifica filas",
+    what: "UPDATE cambia valores de filas que ya existen.",
+    how: "El motor recorre las filas, aplica el SET a las que cumplen el WHERE y deja intactas las demás. Sin WHERE, ¡las cambia todas!",
+    real: "Subir el precio de un producto o corregir el dato de un cliente.",
+    syntax: "UPDATE tabla SET col = valor WHERE condicion;",
+    examples: [{ cmd: "UPDATE productos SET precio = 60 WHERE id = 4", out: "1 fila actualizada." }]
+  },
+  delete: {
+    name: "DELETE", tagline: "Borra filas",
+    what: "DELETE FROM elimina filas de una tabla.",
+    how: "El motor descarta las filas que cumplen el WHERE y conserva las demás. Sin WHERE, borra todo el contenido.",
+    real: "Dar de baja un producto descatalogado.",
+    syntax: "DELETE FROM tabla WHERE condicion;",
+    examples: [{ cmd: "DELETE FROM pedidos WHERE id = 6", out: "1 fila eliminada." }]
+  },
+  agregados: {
+    name: "COUNT / SUM / AVG", tagline: "Resume muchas filas en un valor",
+    what: "Las funciones de agregado resumen un conjunto de filas en un único valor: cuántas hay (COUNT), cuánto suman (SUM), su media (AVG), el mínimo (MIN) o el máximo (MAX).",
+    how: "El motor recorre las filas, acumula el cálculo y devuelve una sola fila con el resultado.",
+    real: "Cuántos pedidos hay, cuánto dinero suman en total o el precio medio.",
+    syntax: "SELECT COUNT(*) FROM tabla;",
+    examples: [
+      { cmd: "SELECT COUNT(*) FROM clientes", out: "COUNT(*)\n--------\n5" },
+      { cmd: "SELECT SUM(precio) FROM productos", out: "SUM(precio)\n-----------\n323.4" }
+    ]
+  },
+  groupby: {
+    name: "GROUP BY", tagline: "Agrupa y resume por categoría",
+    what: "GROUP BY reúne en grupos las filas que comparten un valor y calcula agregados dentro de cada grupo.",
+    how: "El motor clasifica las filas en grupos según la clave indicada y aplica el agregado dentro de cada grupo, devolviendo una fila por grupo.",
+    real: "Número de pedidos por cliente o ventas por ciudad.",
+    syntax: "SELECT grupo, COUNT(*) FROM tabla GROUP BY grupo;",
+    examples: [{ cmd: "SELECT cliente_id, COUNT(*) FROM pedidos GROUP BY cliente_id", out: "cliente_id | COUNT(*)\n-----------+---------\n1          | 2\n2          | 2\n3          | 1\n4          | 1" }]
+  },
+  join: {
+    name: "JOIN", tagline: "Combina varias tablas",
+    what: "JOIN enlaza filas de dos tablas usando una condición ON, normalmente una clave que coincide en ambas.",
+    how: "El motor combina cada fila de una tabla con las de la otra que cumplan el ON, formando filas más anchas que contienen columnas de las dos.",
+    real: "Ver el nombre del cliente junto a cada pedido, en lugar de un id.",
+    syntax: "SELECT ... FROM a JOIN b ON a.clave = b.clave;",
+    examples: [{ cmd: "SELECT clientes.nombre, pedidos.fecha FROM pedidos JOIN clientes ON pedidos.cliente_id = clientes.id", out: "nombre | fecha\n-------+-----------\nAna    | 2024-01-10\nAna    | 2024-01-15\nLuis   | 2024-02-01" }]
+  },
+  createtable: {
+    name: "CREATE TABLE", tagline: "Crea una tabla",
+    what: "CREATE TABLE define una tabla nueva con sus columnas y tipos.",
+    how: "El motor reserva una estructura con las columnas indicadas y sin filas. Después podrás INSERTAR registros en ella.",
+    real: "Diseñar el esquema de una aplicación antes de empezar a guardar datos.",
+    syntax: "CREATE TABLE nombre (col tipo, ...);",
+    examples: [{ cmd: "CREATE TABLE etiquetas (id INTEGER, texto TEXT)", out: "Tabla 'etiquetas' creada con 2 columnas." }]
+  },
+  tipos: {
+    name: "tipos de datos", tagline: "INTEGER, TEXT, REAL",
+    what: "Cada columna tiene un tipo: INTEGER (números enteros), TEXT (texto) y REAL (números decimales).",
+    how: "El gestor usa el tipo como documentación del dato y para calcular: con REAL las sumas arrastran decimales, con INTEGER no.",
+    real: "Precios en REAL, nombres en TEXT y cantidades en INTEGER.",
+    syntax: "col INTEGER | col TEXT | col REAL",
+    examples: [{ cmd: "CREATE TABLE p (id INTEGER, nombre TEXT, precio REAL)", out: "Tabla 'p' creada con 3 columnas." }]
+  },
+  claves: {
+    name: "claves", tagline: "PRIMARY KEY y FOREIGN KEY",
+    what: "La PRIMARY KEY identifica cada fila de forma única. La FOREIGN KEY es una columna que apunta a la clave de otra tabla.",
+    how: "El motor usa la PK como identificador (normalmente 'id') y la FK para relacionar tablas en un JOIN.",
+    real: "pedidos.cliente_id apunta a clientes.id: así se enlazan los pedidos con su cliente.",
+    syntax: "id INTEGER PRIMARY KEY   |   cliente_id INTEGER REFERENCES clientes(id)",
+    examples: [{ cmd: ".schema", out: "clientes(id, nombre, ciudad, edad)\nproductos(id, nombre, precio, stock, descuento)\npedidos(id, cliente_id, producto_id, cantidad, fecha)" }]
+  },
+  like: {
+    name: "LIKE", tagline: "Busca patrones de texto",
+    what: "LIKE compara texto con un patrón: el símbolo % significa 'cualquier cosa' y _ un único carácter.",
+    how: "El motor traduce el patrón a una búsqueda y compara cada valor. LIKE '%a%' encuentra cualquier texto que contenga una 'a'.",
+    real: "Buscar clientes cuyo nombre empiece por 'A': LIKE 'A%'.",
+    syntax: "WHERE columna LIKE 'patron%';",
+    examples: [{ cmd: "SELECT nombre FROM clientes WHERE nombre LIKE 'A%'", out: "nombre\n------\nAna" }]
+  },
+  null: {
+    name: "NULL", tagline: "Valores ausentes",
+    what: "NULL no es 0 ni una cadena vacía: significa 'sin valor'. Se comprueba con IS NULL / IS NOT NULL.",
+    how: "El motor trata NULL como desconocido: cualquier comparación con NULL da desconocido, por eso nunca se escribe '= NULL'.",
+    real: "Un producto sin descuento o un pedido sin fecha registrada.",
+    syntax: "WHERE columna IS NULL;   |   WHERE columna IS NOT NULL;",
+    examples: [{ cmd: "SELECT nombre FROM productos WHERE descuento IS NULL", out: "nombre\n-------\nRaton\nMonitor" }]
+  }
+};
+
+/* ---------- 2. LECCIONES ---------- */
+const LESSONS = [
+  {
+    id: 0, title: "Primeros pasos", icon: "🗃️", color: "duo-green",
+    theory: ["select"],
+    steps: [
+      { type: "mc", q: "¿Qué devuelve 'SELECT * FROM clientes'?", options: ["Solo una columna", "Todas las columnas y filas de clientes", "Borra la tabla clientes", "Crea la tabla clientes"], answer: 1, explain: "* significa todas las columnas; FROM clientes, todas sus filas." },
+      { type: "sql", prompt: "Lista los nombres de las tablas de la base de datos.", hint: "Escribe: .tables", check: ctx => ctx.tipo === "TABLES" && /clientes/.test(ctx.out) && /pedidos/.test(ctx.out) },
+      { type: "sql", prompt: "Muestra todas las filas de la tabla 'clientes'.", hint: "Escribe: SELECT * FROM clientes", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.columnas.length === 4 && ctx.resultado.filas.length === 5 },
+      { type: "mc", q: "¿Qué significa el * en 'SELECT *'?", options: ["Multiplicar", "Seleccionar todas las columnas", "Contar las filas", "Borrar la tabla"], answer: 1, explain: "* es el comodín de 'todas las columnas'." }
+    ]
+  },
+  {
+    id: 1, title: "Elegir columnas", icon: "🎯", color: "duo-blue",
+    theory: ["columnas"],
+    steps: [
+      { type: "mc", q: "¿Cómo pides solo la columna nombre de clientes?", options: ["SELECT nombre FROM clientes", "SELECT clientes.nombre", "SELECT *", "GET nombre"], answer: 0, explain: "Se listan las columnas deseadas separadas por comas entre SELECT y FROM." },
+      { type: "sql", prompt: "Muestra solo la columna 'nombre' de clientes.", hint: "Escribe: SELECT nombre FROM clientes", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.columnas.length === 1 && ctx.resultado.columnas[0] === "nombre" && ctx.resultado.filas.length === 5 },
+      { type: "sql", prompt: "Muestra las columnas 'nombre' y 'ciudad' de clientes.", hint: "Escribe: SELECT nombre, ciudad FROM clientes", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.columnas.length === 2 && ctx.resultado.columnas.includes("nombre") && ctx.resultado.columnas.includes("ciudad") }
+    ]
+  },
+  {
+    id: 2, title: "Filtrar", icon: "🔎", color: "duo-yellow",
+    theory: ["where", "operadores"],
+    steps: [
+      { type: "mc", q: "¿Qué filas devuelve 'WHERE edad > 30'?", options: ["Las de edad mayor que 30", "Las de edad exactamente 30", "Todas", "Ninguna"], answer: 0, explain: "> conserva solo las filas cuyo valor es estrictamente mayor." },
+      { type: "sql", prompt: "Muestra los clientes cuya ciudad es 'Madrid'.", hint: "Escribe: SELECT * FROM clientes WHERE ciudad = 'Madrid'", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 2 },
+      { type: "sql", prompt: "Muestra los clientes con edad mayor que 30.", hint: "Escribe: SELECT * FROM clientes WHERE edad > 30", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 2 },
+      { type: "sql", prompt: "Muestra los clientes de Madrid mayores de 20 años.", hint: "Escribe: SELECT * FROM clientes WHERE ciudad = 'Madrid' AND edad > 20", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 2 },
+      { type: "mc", q: "¿Qué exige el operador AND entre dos condiciones?", options: ["Que se cumpla al menos una", "Que se cumplan ambas", "Que no se cumpla ninguna", "Que sean iguales"], answer: 1, explain: "AND = las dos condiciones deben ser verdaderas." }
+    ]
+  },
+  {
+    id: 3, title: "Ordenar y limitar", icon: "🔢", color: "duo-red",
+    theory: ["orderby", "limit"],
+    steps: [
+      { type: "mc", q: "¿Cómo ordenas de mayor a menor por precio?", options: ["ORDER BY precio ASC", "ORDER BY precio DESC", "SORT precio", "GROUP BY precio"], answer: 1, explain: "DESC ordena de mayor a menor; ASC (por defecto) de menor a mayor." },
+      { type: "sql", prompt: "Muestra los productos ordenados por precio de mayor a menor.", hint: "Escribe: SELECT * FROM productos ORDER BY precio DESC", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 4 && ctx.resultado.filas[0][1] === "Monitor" },
+      { type: "sql", prompt: "Muestra solo los 2 productos más caros.", hint: "Escribe: SELECT * FROM productos ORDER BY precio DESC LIMIT 2", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 2 && ctx.resultado.filas[0][1] === "Monitor" }
+    ]
+  },
+  {
+    id: 4, title: "Valores únicos", icon: "✨", color: "duo-green",
+    theory: ["distinct"],
+    steps: [
+      { type: "mc", q: "¿Para qué sirve DISTINCT?", options: ["Ordenar los resultados", "Eliminar las filas repetidas", "Sumar valores", "Contar filas"], answer: 1, explain: "DISTINCT quita los duplicados del resultado." },
+      { type: "sql", prompt: "Muestra las ciudades donde hay clientes, sin repetir.", hint: "Escribe: SELECT DISTINCT ciudad FROM clientes", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.columnas.length === 1 && ctx.resultado.filas.length === 3 },
+      { type: "sql", prompt: "Muestra los 'cliente_id' distintos que aparecen en pedidos.", hint: "Escribe: SELECT DISTINCT cliente_id FROM pedidos", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 4 }
+    ]
+  },
+  {
+    id: 5, title: "Insertar, actualizar y borrar", icon: "✏️", color: "duo-blue",
+    theory: ["insert", "update", "delete"],
+    steps: [
+      { type: "mc", q: "¿Qué instrucción añade una fila nueva?", options: ["UPDATE", "INSERT INTO", "DELETE FROM", "SELECT"], answer: 1, explain: "INSERT INTO añade registros; UPDATE modifica y DELETE borra." },
+      { type: "sql", prompt: "Inserta un cliente: id 6, nombre 'Nora', ciudad 'Cali', edad 25.", hint: "Escribe: INSERT INTO clientes VALUES (6, 'Nora', 'Cali', 25)", check: ctx => ctx.tipo === "INSERT" && ctx.db.tables.clientes.rows.some(r => r.nombre === "Nora") },
+      { type: "sql", prompt: "Sube a 60 el precio del producto con id 4.", hint: "Escribe: UPDATE productos SET precio = 60 WHERE id = 4", check: ctx => ctx.tipo === "UPDATE" && ctx.db.tables.productos.rows.find(r => r.id === 4).precio === 60 },
+      { type: "sql", prompt: "Elimina el pedido con id 6.", hint: "Escribe: DELETE FROM pedidos WHERE id = 6", check: ctx => ctx.tipo === "DELETE" && !ctx.db.tables.pedidos.rows.some(r => r.id === 6) },
+      { type: "mc", q: "¿Qué pasa si olvidas el WHERE en un UPDATE?", options: ["No cambia nada", "Actualiza todas las filas", "Da error siempre", "Borra la tabla"], answer: 1, explain: "Sin WHERE, la condición es siempre cierta y afecta a todas las filas." }
+    ]
+  },
+  {
+    id: 6, title: "Agrupar y contar", icon: "📊", color: "duo-yellow",
+    theory: ["agregados", "groupby"],
+    steps: [
+      { type: "mc", q: "¿Qué devuelve 'SELECT COUNT(*) FROM clientes'?", options: ["Los nombres", "El número de filas de clientes", "La primera fila", "La tabla entera"], answer: 1, explain: "COUNT(*) cuenta cuántas filas hay." },
+      { type: "sql", prompt: "Cuenta cuántos clientes hay.", hint: "Escribe: SELECT COUNT(*) FROM clientes", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas[0][0] === 5 },
+      { type: "sql", prompt: "Suma todos los precios de los productos.", hint: "Escribe: SELECT SUM(precio) FROM productos", check: ctx => ctx.tipo === "SELECT" && Math.abs(ctx.resultado.filas[0][0] - 323.4) < 0.01 },
+      { type: "sql", prompt: "Cuenta cuántos pedidos hay por cliente.", hint: "Escribe: SELECT cliente_id, COUNT(*) FROM pedidos GROUP BY cliente_id", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.columnas.includes("cliente_id") && ctx.resultado.filas.length === 4 },
+      { type: "mc", q: "¿Para qué sirve GROUP BY?", options: ["Ordenar filas", "Resumir por categorías usando agregados", "Eliminar duplicados", "Filtrar filas"], answer: 1, explain: "GROUP BY forma grupos y calcula agregados dentro de cada uno." }
+    ]
+  },
+  {
+    id: 7, title: "Patrones y NULL", icon: "🔤", color: "duo-red",
+    theory: ["like", "null"],
+    steps: [
+      { type: "mc", q: "En LIKE, ¿qué representa el símbolo %?", options: ["Un solo carácter", "Cualquier cantidad de caracteres", "Un número", "Nada"], answer: 1, explain: "% coincide con 'cualquier cosa'; _ coincide con un único carácter." },
+      { type: "sql", prompt: "Muestra los clientes cuyo nombre empieza por 'A'.", hint: "Escribe: SELECT * FROM clientes WHERE nombre LIKE 'A%'", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 1 },
+      { type: "sql", prompt: "Muestra los clientes cuyo nombre contiene una 'a'.", hint: "Escribe: SELECT * FROM clientes WHERE nombre LIKE '%a%'", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 3 },
+      { type: "mc", q: "¿Cómo se comprueba que una columna no tiene valor?", options: ["WHERE col = NULL", "WHERE col IS NULL", "WHERE col = 0", "WHERE col = ''"], answer: 1, explain: "NULL se comprueba con IS NULL, nunca con = NULL." },
+      { type: "sql", prompt: "Muestra los productos que no tienen descuento (descuento IS NULL).", hint: "Escribe: SELECT nombre FROM productos WHERE descuento IS NULL", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 2 }
+    ]
+  },
+  {
+    id: 8, title: "Combinar tablas", icon: "🔗", color: "duo-blue",
+    theory: ["join"],
+    steps: [
+      { type: "mc", q: "¿Qué hace un JOIN?", options: ["Borra una tabla", "Combina filas de dos tablas según una condición ON", "Ordena por dos columnas", "Cuenta filas"], answer: 1, explain: "JOIN une tablas por una clave común indicada en el ON." },
+      { type: "sql", prompt: "Muestra el nombre del cliente y la fecha de cada pedido.", hint: "Escribe: SELECT clientes.nombre, pedidos.fecha FROM pedidos JOIN clientes ON pedidos.cliente_id = clientes.id", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.columnas.length === 2 && ctx.resultado.filas.length === 6 },
+      { type: "sql", prompt: "Cuenta los pedidos agrupados por nombre de cliente.", hint: "Escribe: SELECT clientes.nombre, COUNT(*) FROM pedidos JOIN clientes ON pedidos.cliente_id = clientes.id GROUP BY clientes.nombre", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 4 }
+    ]
+  },
+  {
+    id: 9, title: "Crear tablas", icon: "🏗️", color: "duo-green",
+    theory: ["createtable", "tipos", "claves"],
+    steps: [
+      { type: "mc", q: "¿Qué tipo usarías para el precio de un producto?", options: ["TEXT", "INTEGER", "REAL", "DATE"], answer: 2, explain: "REAL guarda números con decimales, ideal para precios." },
+      { type: "sql", prompt: "Crea una tabla 'etiquetas' con columnas id INTEGER y texto TEXT.", hint: "Escribe: CREATE TABLE etiquetas (id INTEGER, texto TEXT)", check: ctx => ctx.tipo === "CREATE" && !!ctx.db.tables.etiquetas && ctx.db.tables.etiquetas.columns.join(",") === "id,texto" },
+      { type: "sql", prompt: "Inserta la etiqueta (1, 'nuevo') en la tabla 'etiquetas'.", hint: "Escribe: INSERT INTO etiquetas VALUES (1, 'nuevo')", check: ctx => ctx.tipo === "INSERT" && ctx.db.tables.etiquetas.rows.length === 1 && ctx.db.tables.etiquetas.rows[0].texto === "nuevo" }
+    ]
+  }
+];
+
+/* ---------- 3. BASE DE DATOS (esquema Tienda) ---------- */
+function defaultDb() {
+  return {
+    tables: {
+      clientes: {
+        columns: ["id", "nombre", "ciudad", "edad"],
+        rows: [
+          { id: 1, nombre: "Ana", ciudad: "Madrid", edad: 28 },
+          { id: 2, nombre: "Luis", ciudad: "Bogota", edad: 34 },
+          { id: 3, nombre: "Marta", ciudad: "Madrid", edad: 22 },
+          { id: 4, nombre: "Pedro", ciudad: "Lima", edad: 41 },
+          { id: 5, nombre: "Sofia", ciudad: "Bogota", edad: 30 }
+        ]
+      },
+      productos: {
+        columns: ["id", "nombre", "precio", "stock", "descuento"],
+        rows: [
+          { id: 1, nombre: "Teclado", precio: 45.5, stock: 12, descuento: 10 },
+          { id: 2, nombre: "Raton", precio: 19.9, stock: 30, descuento: null },
+          { id: 3, nombre: "Monitor", precio: 199, stock: 5, descuento: null },
+          { id: 4, nombre: "Webcam", precio: 59, stock: 8, descuento: 5 }
+        ]
+      },
+      pedidos: {
+        columns: ["id", "cliente_id", "producto_id", "cantidad", "fecha"],
+        rows: [
+          { id: 1, cliente_id: 1, producto_id: 1, cantidad: 2, fecha: "2024-01-10" },
+          { id: 2, cliente_id: 1, producto_id: 3, cantidad: 1, fecha: "2024-01-15" },
+          { id: 3, cliente_id: 2, producto_id: 2, cantidad: 3, fecha: "2024-02-01" },
+          { id: 4, cliente_id: 3, producto_id: 4, cantidad: 1, fecha: "2024-02-05" },
+          { id: 5, cliente_id: 4, producto_id: 1, cantidad: 1, fecha: "2024-03-01" },
+          { id: 6, cliente_id: 2, producto_id: 1, cantidad: 1, fecha: "2024-03-02" }
+        ]
+      }
+    }
+  };
+}
+function cloneDb() { return JSON.parse(JSON.stringify(defaultDb())); }
+function newTerm() { return { db: cloneDb(), lines: [], history: [] }; }
+
+/* ---------- 4. MOTOR SQL ---------- */
+function tokErr(msg) { const e = new Error(msg); e.sql = true; return e; }
+
+function tokenize(sql) {
+  const toks = []; const s = sql; let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (/\s/.test(c)) { i++; continue; }
+    if (c === "'" || c === '"') {
+      const q = c; let val = ""; i++;
+      while (i < s.length && s[i] !== q) { val += s[i]; i++; }
+      i++;
+      toks.push({ t: "str", v: val }); continue;
+    }
+    if (/[0-9]/.test(c)) {
+      let num = ""; while (i < s.length && /[0-9.]/.test(s[i])) { num += s[i]; i++; }
+      toks.push({ t: "num", v: parseFloat(num) }); continue;
+    }
+    if (/[A-Za-z_]/.test(c)) {
+      let id = ""; while (i < s.length && /[A-Za-z0-9_]/.test(s[i])) { id += s[i]; i++; }
+      toks.push({ t: "id", v: id }); continue;
+    }
+    if (c === ".") { toks.push({ t: "punct", v: "." }); i++; continue; }
+    if ("(),*".indexOf(c) !== -1) { toks.push({ t: "punct", v: c }); i++; continue; }
+    if (c === "=" || c === "<" || c === ">" || c === "!") {
+      let op = c; i++;
+      if (s[i] === "=") { op += s[i]; i++; }
+      else if (c === "<" && s[i] === ">") { op = "<>"; i++; }
+      toks.push({ t: "op", v: op }); continue;
+    }
+    i++;
+  }
+  return toks;
+}
+
+function mkp(toks) { return { toks, i: 0 }; }
+function peek(p) { return p.toks[p.i]; }
+function isKw(p, kw) { const t = p.toks[p.i]; return t && t.t === "id" && t.v.toLowerCase() === kw; }
+function eatKw(p, kw) { if (isKw(p, kw)) { p.i++; return true; } return false; }
+function expectKw(p, kw) { if (!eatKw(p, kw)) throw tokErr("Se esperaba '" + kw.toUpperCase() + "'"); }
+function isPunct(p, v) { const t = p.toks[p.i]; return t && t.t === "punct" && t.v === v; }
+function eatPunct(p, v) { if (isPunct(p, v)) { p.i++; return true; } return false; }
+function expectPunct(p, v) { if (!eatPunct(p, v)) throw tokErr("Se esperaba '" + v + "'"); }
+function isIdent(p) { const t = peek(p); return t && t.t === "id"; }
+function expectIdent(p) { const t = peek(p); if (!t || t.t !== "id") throw tokErr("Se esperaba un nombre"); p.i++; return t.v; }
+
+const RESERVED = new Set(["from", "where", "group", "order", "limit", "and", "or", "having", "as", "asc", "desc", "join", "inner", "left", "on", "select", "insert", "into", "update", "delete", "set", "values", "create", "drop", "table", "by", "primary", "not", "null", "unique", "references", "default"]);
+function isReserved(p) { const t = peek(p); return t && t.t === "id" && RESERVED.has(t.v.toLowerCase()); }
+
+function parseExpr(p) { return parseOr(p); }
+function parseOr(p) {
+  let left = parseAnd(p);
+  while (isKw(p, "or")) { p.i++; left = { type: "or", left, right: parseAnd(p) }; }
+  return left;
+}
+function parseAnd(p) {
+  let left = parseNot(p);
+  while (isKw(p, "and")) { p.i++; left = { type: "and", left, right: parseNot(p) }; }
+  return left;
+}
+function parseNot(p) {
+  if (isKw(p, "not")) { p.i++; return { type: "not", expr: parseNot(p) }; }
+  return parseCmp(p);
+}
+function parseCmp(p) {
+  const left = parseOperand(p);
+  if (isKw(p, "is")) { p.i++; const neg = eatKw(p, "not"); expectKw(p, "null"); return { type: "isnull", neg, expr: left }; }
+  const nx = p.toks[p.i], nx2 = p.toks[p.i + 1];
+  if (nx && nx.t === "id" && nx.v.toLowerCase() === "not" && nx2 && nx2.t === "id" && (nx2.v.toLowerCase() === "like" || nx2.v.toLowerCase() === "in")) {
+    p.i++;
+    if (eatKw(p, "like")) return { type: "like", neg: true, expr: left, pattern: parseOperand(p) };
+    if (eatKw(p, "in")) return { type: "in", neg: true, expr: left, list: parseInList(p) };
+  }
+  if (eatKw(p, "like")) return { type: "like", neg: false, expr: left, pattern: parseOperand(p) };
+  if (eatKw(p, "in")) return { type: "in", neg: false, expr: left, list: parseInList(p) };
+  const t = peek(p);
+  if (t && t.t === "op") { p.i++; const right = parseOperand(p); return { type: "cmp", op: t.v, left, right }; }
+  return left;
+}
+function parseInList(p) {
+  expectPunct(p, "(");
+  const list = [];
+  if (!isPunct(p, ")")) { do { list.push(parseOperand(p)); } while (eatPunct(p, ",")); }
+  expectPunct(p, ")");
+  return list;
+}
+function parseOperand(p) {
+  const t = peek(p);
+  if (!t) throw tokErr("Expresión incompleta");
+  if (t.t === "num") { p.i++; return { type: "lit", v: t.v }; }
+  if (t.t === "str") { p.i++; return { type: "lit", v: t.v }; }
+  if (t.t === "punct" && t.v === "(") { p.i++; const e = parseExpr(p); expectPunct(p, ")"); return e; }
+  if (t.t === "id") {
+    const low = t.v.toLowerCase();
+    if (low === "true") { p.i++; return { type: "lit", v: true }; }
+    if (low === "false") { p.i++; return { type: "lit", v: false }; }
+    if (low === "null") { p.i++; return { type: "lit", v: null }; }
+    if (p.toks[p.i + 1] && p.toks[p.i + 1].t === "punct" && p.toks[p.i + 1].v === "(") {
+      p.i++; expectPunct(p, "(");
+      let arg = null;
+      if (eatPunct(p, "*")) arg = { type: "star" };
+      else if (!isPunct(p, ")")) arg = parseOperand(p);
+      expectPunct(p, ")");
+      return { type: "func", fn: low, arg };
+    }
+    p.i++;
+    let table = null, col = t.v;
+    if (isPunct(p, ".")) { p.i++; table = col; col = expectIdent(p); }
+    return { type: "col", table, col };
+  }
+  throw tokErr("Token inesperado: '" + t.v + "'");
+}
+
+function truthy(v) { return v !== null && v !== undefined && v !== false && v !== 0 && v !== ""; }
+function rowGet(row, table, col) { return table ? row[table + "." + col] : row[col]; }
+function evalExpr(node, row) {
+  switch (node.type) {
+    case "lit": return node.v;
+    case "col": return rowGet(row, node.table, node.col);
+    case "not": return !truthy(evalExpr(node.expr, row));
+    case "and": return truthy(evalExpr(node.left, row)) && truthy(evalExpr(node.right, row));
+    case "or": return truthy(evalExpr(node.left, row)) || truthy(evalExpr(node.right, row));
+    case "isnull": { const v = evalExpr(node.expr, row); const is = (v === null || v === undefined); return node.neg ? !is : is; }
+    case "cmp": return evalCmp(node, row);
+    case "like": return evalLike(node, row);
+    case "in": return evalIn(node, row);
+    case "func": return null;
+  }
+  return null;
+}
+function evalCmp(node, row) {
+  const a = evalExpr(node.left, row), b = evalExpr(node.right, row);
+  if (a === null || a === undefined || b === null || b === undefined) return false;
+  switch (node.op) {
+    case "=": return a === b || String(a) === String(b);
+    case "!=": case "<>": return !(a === b || String(a) === String(b));
+    case "<": return a < b;
+    case ">": return a > b;
+    case "<=": return a <= b;
+    case ">=": return a >= b;
+  }
+  return false;
+}
+function likeToRe(pat) {
+  let re = "^";
+  for (const ch of String(pat)) {
+    if (ch === "%") re += ".*";
+    else if (ch === "_") re += ".";
+    else re += ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(re + "$", "i");
+}
+function evalLike(node, row) {
+  const v = evalExpr(node.expr, row), pat = evalExpr(node.pattern, row);
+  if (v === null || v === undefined) return false;
+  const m = likeToRe(pat).test(String(v));
+  return node.neg ? !m : m;
+}
+function evalIn(node, row) {
+  const v = evalExpr(node.expr, row);
+  const hit = node.list.some(l => { const x = evalExpr(l, row); return x === v || String(x) === String(v); });
+  return node.neg ? !hit : hit;
+}
+
+/* --- fuentes (FROM / JOIN) --- */
+function qualifyRow(t, alias, r) {
+  const o = {};
+  for (const c of t.columns) { o[alias + "." + c] = r[c]; if (!(c in o)) o[c] = r[c]; }
+  return o;
+}
+function rowsFor(db, fr) {
+  const t = db.tables[fr.table];
+  if (!t) throw tokErr("No existe la tabla '" + fr.table + "'");
+  const alias = fr.alias || fr.table;
+  return t.rows.map(r => qualifyRow(t, alias, r));
+}
+function buildRows(db, from) {
+  let rows = rowsFor(db, from[0]);
+  for (let k = 1; k < from.length; k++) {
+    const fr = from[k];
+    const other = rowsFor(db, fr);
+    const next = [];
+    for (const a of rows) for (const b of other) {
+      const merged = Object.assign({}, a, b);
+      if (!fr.on || truthy(evalExpr(fr.on, merged))) next.push(merged);
+    }
+    rows = next;
+  }
+  return rows;
+}
+function sourceColumns(db, from) {
+  const all = [], counts = {};
+  for (const fr of from) {
+    const t = db.tables[fr.table]; const alias = fr.alias || fr.table;
+    for (const c of t.columns) { all.push({ alias, c }); counts[c] = (counts[c] || 0) + 1; }
+  }
+  return all.map(x => ({ alias: x.alias, c: x.c, label: counts[x.c] > 1 ? x.alias + "." + x.c : x.c }));
+}
+
+/* --- parser SELECT --- */
+function parseSelect(p) {
+  expectKw(p, "select");
+  const distinct = eatKw(p, "distinct");
+  const cols = parseSelectList(p);
+  expectKw(p, "from");
+  const from = parseFrom(p);
+  let where = null, groupBy = null, orderBy = null, limit = null;
+  if (eatKw(p, "where")) where = parseExpr(p);
+  if (isKw(p, "group")) { p.i++; expectKw(p, "by"); groupBy = parseColList(p); }
+  if (isKw(p, "order")) { p.i++; expectKw(p, "by"); orderBy = parseOrderList(p); }
+  if (eatKw(p, "limit")) { const t = peek(p); if (!t || t.t !== "num") throw tokErr("LIMIT necesita un número"); limit = t.v; p.i++; }
+  return { kind: "select", distinct, cols, from, where, groupBy, orderBy, limit };
+}
+function parseSelectList(p) {
+  const cols = [];
+  do {
+    if (eatPunct(p, "*")) { cols.push({ kind: "star", expr: null, alias: null }); continue; }
+    const e = parseOperand(p);
+    let alias = null;
+    if (eatKw(p, "as")) alias = expectIdent(p);
+    else if (isIdent(p) && !isReserved(p)) alias = expectIdent(p);
+    cols.push({ kind: e.type === "func" ? "agg" : "expr", expr: e, alias });
+  } while (eatPunct(p, ","));
+  return cols;
+}
+function parseFrom(p) {
+  const from = [];
+  let table = expectIdent(p), alias = null;
+  if (eatKw(p, "as")) alias = expectIdent(p);
+  else if (isIdent(p) && !isReserved(p)) alias = expectIdent(p);
+  from.push({ table, alias, on: null });
+  while (isKw(p, "join") || isKw(p, "inner") || isKw(p, "left")) {
+    eatKw(p, "inner"); eatKw(p, "left");
+    if (!eatKw(p, "join")) break;
+    const t2 = expectIdent(p); let a2 = null;
+    if (eatKw(p, "as")) a2 = expectIdent(p);
+    else if (isIdent(p) && !isReserved(p)) a2 = expectIdent(p);
+    expectKw(p, "on");
+    from.push({ table: t2, alias: a2, on: parseExpr(p) });
+  }
+  return from;
+}
+function parseColList(p) { const list = []; do { list.push(parseOperand(p)); } while (eatPunct(p, ",")); return list; }
+function parseOrderList(p) {
+  const list = [];
+  do {
+    const e = parseOperand(p);
+    let dir = "asc";
+    if (eatKw(p, "asc")) dir = "asc";
+    else if (eatKw(p, "desc")) dir = "desc";
+    list.push({ expr: e, dir });
+  } while (eatPunct(p, ","));
+  return list;
+}
+
+function exprLabel(e) {
+  if (!e) return "";
+  if (e.type === "col") return e.col;
+  if (e.type === "func") return e.fn + "(" + (e.arg && e.arg.type === "star" ? "*" : (e.arg ? e.arg.col : "")) + ")";
+  if (e.type === "lit") return String(e.v);
+  return "expr";
+}
+function selectLabel(c) { return c.alias || exprLabel(c.expr); }
+function aggValue(node, group) {
+  const fn = node.fn;
+  if (fn === "count") {
+    if (!node.arg || node.arg.type === "star") return group.length;
+    return group.filter(r => { const v = evalExpr(node.arg, r); return v !== null && v !== undefined; }).length;
+  }
+  const vals = group.map(r => evalExpr(node.arg, r)).filter(v => v !== null && v !== undefined);
+  if (fn === "sum") return vals.reduce((s, v) => s + (Number(v) || 0), 0);
+  if (fn === "avg") return vals.length ? vals.reduce((s, v) => s + (Number(v) || 0), 0) / vals.length : null;
+  if (fn === "min") return vals.length ? vals.reduce((a, b) => (a < b ? a : b)) : null;
+  if (fn === "max") return vals.length ? vals.reduce((a, b) => (a > b ? a : b)) : null;
+  return null;
+}
+function execSelect(db, ast) {
+  const rows = buildRows(db, ast.from);
+  const filtered = ast.where ? rows.filter(r => truthy(evalExpr(ast.where, r))) : rows;
+  const src = sourceColumns(db, ast.from);
+  const hasAgg = ast.cols.some(c => c.kind === "agg");
+  let outCols, outRows;
+  if (hasAgg || (ast.groupBy && ast.groupBy.length)) {
+    outCols = ast.cols.map(selectLabel);
+    const groups = new Map();
+    if (ast.groupBy && ast.groupBy.length) {
+      for (const r of filtered) {
+        const key = ast.groupBy.map(g => JSON.stringify(evalExpr(g, r))).join("|");
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(r);
+      }
+    } else {
+      groups.set("__all__", filtered);
+    }
+    outRows = [];
+    for (const grp of groups.values()) {
+      outRows.push(ast.cols.map(c => c.kind === "agg" ? aggValue(c.expr, grp) : (grp.length ? evalExpr(c.expr, grp[0]) : null)));
+    }
+  } else if (ast.cols.length === 1 && ast.cols[0].kind === "star") {
+    outCols = src.map(s => s.label);
+    outRows = filtered.map(r => src.map(s => rowGet(r, s.alias, s.c)));
+  } else {
+    outCols = ast.cols.map(selectLabel);
+    outRows = filtered.map(r => ast.cols.map(c => evalExpr(c.expr, r)));
+  }
+  if (ast.distinct) {
+    const seen = new Set(), dr = [];
+    for (const row of outRows) { const k = JSON.stringify(row); if (!seen.has(k)) { seen.add(k); dr.push(row); } }
+    outRows = dr;
+  }
+  if (ast.orderBy && ast.orderBy.length) {
+    outRows = outRows.slice().sort((ra, rb) => {
+      for (const ob of ast.orderBy) {
+        let ia;
+        if (ob.expr.type === "lit" && typeof ob.expr.v === "number") ia = ob.expr.v - 1;
+        else ia = outCols.indexOf(exprLabel(ob.expr));
+        if (ia < 0) ia = 0;
+        const a = ra[ia], b = rb[ia];
+        let c = 0;
+        if (a === null && b === null) c = 0;
+        else if (a === null) c = -1;
+        else if (b === null) c = 1;
+        else if (typeof a === "number" && typeof b === "number") c = a - b;
+        else c = String(a).localeCompare(String(b));
+        if (c !== 0) return ob.dir === "desc" ? -c : c;
+      }
+      return 0;
+    });
+  }
+  if (ast.limit != null) outRows = outRows.slice(0, ast.limit);
+  return { columns: outCols, rows: outRows };
+}
+
+/* --- resto de instrucciones --- */
+function execInsert(db, p) {
+  expectKw(p, "insert"); expectKw(p, "into");
+  const name = expectIdent(p);
+  const t = db.tables[name];
+  if (!t) throw tokErr("No existe la tabla '" + name + "'");
+  let cols = null;
+  if (isPunct(p, "(")) { p.i++; cols = []; do { cols.push(expectIdent(p)); } while (eatPunct(p, ",")); expectPunct(p, ")"); }
+  expectKw(p, "values");
+  const allRows = [];
+  do {
+    expectPunct(p, "(");
+    const vals = [];
+    if (!isPunct(p, ")")) { do { vals.push(parseOperand(p)); } while (eatPunct(p, ",")); }
+    expectPunct(p, ")");
+    const row = {};
+    const targetCols = cols || t.columns;
+    targetCols.forEach((c, i) => { row[c] = vals[i] ? evalExpr(vals[i], {}) : null; });
+    if (t.columns.includes("id") && !("id" in row)) row.id = Math.max(0, ...t.rows.map(r => Number(r.id) || 0)) + 1;
+    for (const c of t.columns) if (!(c in row)) row[c] = null;
+    allRows.push(row);
+  } while (eatPunct(p, ","));
+  for (const r of allRows) t.rows.push(r);
+  const n = allRows.length;
+  return okMsg(n + " fila" + (n === 1 ? "" : "s") + " insertada" + (n === 1 ? "" : "s") + ".\n", "INSERT");
+}
+function execUpdate(db, p) {
+  expectKw(p, "update");
+  const name = expectIdent(p);
+  const t = db.tables[name];
+  if (!t) throw tokErr("No existe la tabla '" + name + "'");
+  expectKw(p, "set");
+  const assigns = [];
+  do {
+    const col = expectIdent(p);
+    if (peek(p) && peek(p).t === "op" && peek(p).v === "=") p.i++; else throw tokErr("Se esperaba '=' en SET");
+    assigns.push({ col, val: parseOperand(p) });
+  } while (eatPunct(p, ","));
+  let where = null;
+  if (eatKw(p, "where")) where = parseExpr(p);
+  let n = 0;
+  for (const r of t.rows) {
+    const ctxRow = qualifyRow(t, name, r);
+    if (!where || truthy(evalExpr(where, ctxRow))) { for (const a of assigns) r[a.col] = evalExpr(a.val, ctxRow); n++; }
+  }
+  return okMsg(n + " fila" + (n === 1 ? "" : "s") + " actualizada" + (n === 1 ? "" : "s") + ".\n", "UPDATE");
+}
+function execDelete(db, p) {
+  expectKw(p, "delete"); expectKw(p, "from");
+  const name = expectIdent(p);
+  const t = db.tables[name];
+  if (!t) throw tokErr("No existe la tabla '" + name + "'");
+  let where = null;
+  if (eatKw(p, "where")) where = parseExpr(p);
+  const before = t.rows.length;
+  t.rows = t.rows.filter(r => { const ctxRow = qualifyRow(t, name, r); return where ? !truthy(evalExpr(where, ctxRow)) : false; });
+  const n = before - t.rows.length;
+  return okMsg(n + " fila" + (n === 1 ? "" : "s") + " eliminada" + (n === 1 ? "" : "s") + ".\n", "DELETE");
+}
+function execCreate(db, p) {
+  expectKw(p, "create"); expectKw(p, "table");
+  eatKw(p, "if");
+  if (isKw(p, "not")) p.i++;
+  if (isKw(p, "exists")) p.i++;
+  const name = expectIdent(p);
+  expectPunct(p, "(");
+  const columns = [];
+  do {
+    const col = expectIdent(p);
+    if (isIdent(p) && !isReservedType(p)) p.i++;
+    while (isIdent(p) && ["primary", "not", "null", "unique", "references", "default"].indexOf(p.toks[p.i].v.toLowerCase()) !== -1) {
+      const w = p.toks[p.i].v.toLowerCase(); p.i++;
+      if (w === "primary") eatKw(p, "key");
+      else if (w === "not") eatKw(p, "null");
+      else if (w === "default") parseOperand(p);
+      else if (w === "references") { expectIdent(p); if (isPunct(p, "(")) { p.i++; expectIdent(p); expectPunct(p, ")"); } }
+    }
+    columns.push(col);
+  } while (eatPunct(p, ","));
+  expectPunct(p, ")");
+  db.tables[name] = { columns, rows: [] };
+  return okMsg("Tabla '" + name + "' creada con " + columns.length + " columnas.\n", "CREATE");
+}
+function isReservedType(p) { const t = peek(p); return t && t.t === "id" && RESERVED.has(t.v.toLowerCase()); }
+function execDrop(db, p) {
+  expectKw(p, "drop"); expectKw(p, "table");
+  eatKw(p, "if");
+  if (isKw(p, "exists")) p.i++;
+  const name = expectIdent(p);
+  if (db.tables[name]) delete db.tables[name];
+  return okMsg("Tabla '" + name + "' eliminada.\n", "DROP");
+}
+
+/* --- salida --- */
+function okMsg(text, tipo) { return { tipo, columns: [], rows: [], out: text, error: false }; }
+function errMsg(text) { return { tipo: "", columns: [], rows: [], out: "ERROR: " + text + "\n", error: true }; }
+function cellStr(v) {
+  if (v === null || v === undefined) return "NULL";
+  if (typeof v === "number" && !Number.isInteger(v)) return String(Math.round(v * 100) / 100);
+  return String(v);
+}
+function formatTable(columns, rows) {
+  if (!columns.length) return "";
+  const widths = columns.map(c => String(c).length);
+  const body = rows.map(r => r.map((v, i) => { const s = cellStr(v); if (s.length > widths[i]) widths[i] = s.length; return s; }));
+  const line = arr => arr.map((c, i) => String(c).padEnd(widths[i])).join(" | ");
+  const sep = widths.map(w => "-".repeat(w)).join("-+-");
+  let out = line(columns) + "\n" + sep + "\n";
+  out += body.map(line).join("\n");
+  if (rows.length) out += "\n";
+  out += "(" + rows.length + " fila" + (rows.length === 1 ? "" : "s") + ")\n";
+  return out;
+}
+function schemaLine(db, name) {
+  const t = db.tables[name];
+  if (!t) return "-- No existe la tabla '" + name + "'\n";
+  return name + "(" + t.columns.join(", ") + ")\n";
+}
+
+function runSQL(db, sqlRaw) {
+  const sql = String(sqlRaw).trim();
+  if (!sql) return { tipo: "", columns: [], rows: [], out: "", error: false };
+  if (sql[0] === ".") {
+    const cmd = sql.slice(1).trim().split(/\s+/)[0].toLowerCase();
+    if (cmd === "tables") return okMsg(Object.keys(db.tables).sort().join("   ") + "\n", "TABLES");
+    if (cmd === "schema") { let o = ""; for (const n of Object.keys(db.tables)) o += schemaLine(db, n); return okMsg(o, "SCHEMA"); }
+    if (cmd === "help") return okMsg("Comandos: .tables, .schema, .help\nSQL: SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, DROP TABLE\n", "HELP");
+    return errMsg("Comando desconocido: ." + cmd);
+  }
+  const clean = sql.replace(/;\s*$/, "");
+  try {
+    const toks = tokenize(clean);
+    const p = mkp(toks);
+    const first = toks[0] ? toks[0].v.toLowerCase() : "";
+    let res;
+    if (first === "select") { const ast = parseSelect(p); const r = execSelect(db, ast); res = { tipo: "SELECT", columns: r.columns, rows: r.rows, out: formatTable(r.columns, r.rows), error: false }; }
+    else if (first === "insert") res = execInsert(db, p);
+    else if (first === "update") res = execUpdate(db, p);
+    else if (first === "delete") res = execDelete(db, p);
+    else if (first === "create") res = execCreate(db, p);
+    else if (first === "drop") res = execDrop(db, p);
+    else if (first === "describe" || first === "desc") { p.i++; res = okMsg(schemaLine(db, expectIdent(p)), "SCHEMA"); }
+    else throw tokErr("Solo se admite SELECT, INSERT, UPDATE, DELETE, CREATE TABLE y DROP TABLE.");
+    if (p.toks[p.i]) throw tokErr("Sintaxis no reconocida cerca de '" + p.toks[p.i].v + "'");
+    return res;
+  } catch (e) {
+    return errMsg(e && e.sql ? e.message : ("Error de sintaxis: " + (e && e.message ? e.message : e)));
+  }
+}
+
+/* ---------- 5. ESTADO + PERSISTENCIA ---------- */
+const STORE_KEY = "cli_sql_state_v1";
+function defaultProgress() { return { xp: 0, completed: [], streak: 0, lastDate: null }; }
+function loadProgress() {
+  try { const raw = localStorage.getItem(STORE_KEY); return raw ? Object.assign(defaultProgress(), JSON.parse(raw)) : defaultProgress(); }
+  catch (e) { return defaultProgress(); }
+}
+function saveProgress() { try { localStorage.setItem(STORE_KEY, JSON.stringify(state.progress)); } catch (e) {} }
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+function touchStreak() {
+  const p = state.progress, t = todayStr();
+  if (p.lastDate === t) return;
+  const y = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  p.streak = p.lastDate === y ? p.streak + 1 : 1;
+  p.lastDate = t;
+  saveProgress();
+}
+
+let state = {
+  screen: "home",
+  progress: loadProgress(),
+  lesson: null, cardIndex: 0,
+  steps: [], stepIndex: 0, hearts: 3, earned: 0,
+  term: null, wrongTries: 0,
+  feedback: null
+};
+
+/* ---------- 6. VISTAS ---------- */
+const app = document.getElementById("app");
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function header() {
+  const p = state.progress;
+  return `
+  <header class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200">
+    <div class="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
+      <button onclick="goHome()" class="flex items-center gap-2 font-black text-xl text-duo-blue">
+        <span class="text-2xl">🗃️</span> CLI&nbsp;SQL
+      </button>
+      <div class="flex items-center gap-3 text-sm font-bold">
+        <span class="flex items-center gap-1 text-duo-yellow">🔥 ${p.streak}</span>
+        <span class="flex items-center gap-1 text-duo-blue">⭐ ${p.xp} XP</span>
+      </div>
+    </div>
+  </header>`;
+}
+
+function renderHome() {
+  const p = state.progress;
+  const nodes = LESSONS.map((l, i) => {
+    const unlocked = i === 0 || p.completed.includes(LESSONS[i - 1].id);
+    const done = p.completed.includes(l.id);
+    const offset = i % 2 === 0 ? "translate-x-8" : "-translate-x-8";
+    return `
+    <div class="flex flex-col items-center ${offset}">
+      <button ${unlocked ? `onclick="startLesson(${l.id})"` : "disabled"}
+        class="relative w-20 h-20 rounded-full flex items-center justify-center text-3xl font-black btn-3d
+          ${done ? "bg-duo-green text-white shadow-[0_5px_0_#46a302]" :
+                    unlocked ? "bg-duo-blue text-white shadow-[0_5px_0_#1899d6] pulse-ring" :
+                               "bg-slate-200 text-slate-400 shadow-[0_5px_0_#cbd5e1] cursor-not-allowed"}">
+        ${done ? "✓" : unlocked ? l.icon : "🔒"}
+      </button>
+      <span class="mt-2 text-xs font-bold ${unlocked ? "text-slate-700" : "text-slate-400"}">${l.title}</span>
+    </div>
+    ${i < LESSONS.length - 1 ? `<div class="w-2 h-8 ${p.completed.includes(l.id) ? "bg-duo-blue" : "bg-slate-200"} rounded-full"></div>` : ""}`;
+  }).join("");
+
+  app.innerHTML = `${header()}
+  <main class="max-w-3xl mx-auto px-4 py-8 fade-in">
+    <div class="text-center mb-8">
+      <h1 class="text-3xl font-black text-slate-800">Aprende SQL desde cero</h1>
+      <p class="text-slate-500 font-semibold mt-1">Teoría clara + consultas reales sobre una base de datos de ejemplo.</p>
+    </div>
+    <div class="bg-white rounded-3xl border-2 border-slate-200 p-8 flex flex-col items-center gap-2">
+      ${nodes}
+    </div>
+    <div class="mt-6 flex flex-col items-center gap-3">
+      <button onclick="startSandbox()" class="bg-slate-800 text-white font-black px-6 py-3 rounded-2xl shadow-[0_5px_0_#1e293b] btn-3d">🗄️ SQL libre (sandbox)</button>
+      <button onclick="resetAll()" class="text-xs font-bold text-slate-400 hover:text-duo-red underline">Reiniciar todo el progreso</button>
+    </div>
+  </main>`;
+}
+
+function renderTheory() {
+  const lesson = state.lesson;
+  const t = THEORY[lesson.theory[state.cardIndex]];
+  const total = lesson.theory.length;
+  const isLast = state.cardIndex === total - 1;
+
+  const examples = t.examples.map(e => `
+    <div class="term bg-slate-900 text-slate-100 rounded-xl overflow-hidden text-sm">
+      <div class="flex"><span class="text-duo-blue px-3 py-1">db&gt;</span><span class="py-1">${esc(e.cmd)}</span></div>
+      ${e.out ? `<div class="text-slate-300 px-3 pb-2 whitespace-pre overflow-x-auto">${esc(e.out)}</div>` : ""}
+    </div>`).join("");
+
+  const section = (icon, title, b) => `
+    <div class="border-l-4 border-duo-blue pl-4">
+      <h3 class="font-black text-slate-800 flex items-center gap-2">${icon} ${title}</h3>
+      <p class="text-slate-600 font-medium mt-1">${b}</p>
+    </div>`;
+
+  app.innerHTML = `${header()}
+  <main class="max-w-3xl mx-auto px-4 py-6 fade-in">
+    <div class="mb-4">
+      <div class="flex items-center justify-between text-sm font-bold text-slate-400">
+        <span>Fase de teoría</span><span>${state.cardIndex + 1} / ${total}</span>
+      </div>
+      <div class="h-3 bg-slate-200 rounded-full mt-2 overflow-hidden">
+        <div class="h-full bg-duo-blue transition-all" style="width:${((state.cardIndex + 1) / total) * 100}%"></div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-3xl border-2 border-slate-200 p-6 md:p-8">
+      <div class="flex items-center gap-3 mb-6">
+        <span class="term bg-slate-900 text-duo-blue font-bold px-3 py-1 rounded-lg">${esc(t.name)}</span>
+        <span class="text-slate-500 font-bold">${esc(t.tagline)}</span>
+      </div>
+      <div class="space-y-5">
+        ${section("🔎", "¿Qué es y qué hace?", esc(t.what))}
+        ${section("⚙️", "¿Cómo funciona internamente?", esc(t.how))}
+        ${section("💼", "¿Para qué sirve en la vida real?", esc(t.real))}
+        <div class="border-l-4 border-duo-green pl-4">
+          <h3 class="font-black text-slate-800">⌨️ ¿Cómo se usa?</h3>
+          <p class="text-slate-600 font-medium mt-1">Sintaxis: <code class="term bg-slate-100 px-2 py-0.5 rounded">${esc(t.syntax)}</code></p>
+          <div class="mt-3 space-y-2">${examples}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between mt-6">
+      <button onclick="prevCard()" class="font-black text-slate-400 px-4 py-3 rounded-2xl hover:bg-slate-200" ${state.cardIndex === 0 ? "disabled" : ""}>Atrás</button>
+      <button onclick="nextCard()" class="bg-duo-blue text-white font-black px-8 py-3 rounded-2xl shadow-[0_5px_0_#1899d6] btn-3d hover:brightness-105">
+        ${isLast ? "¡Ir a la práctica!" : "Siguiente"}
+      </button>
+    </div>
+  </main>`;
+}
+
+function heartRow() { let h = ""; for (let i = 0; i < 3; i++) h += i < state.hearts ? "❤️" : "🤍"; return h; }
+
+function termLinesHtml(term) {
+  return term.lines.map(l =>
+    l.type === "cmd"
+      ? `<div class="text-slate-100"><span class="text-duo-blue">db&gt;</span> ${esc(l.text)}</div>`
+      : `<div class="${l.error ? "text-duo-red" : "text-slate-300"} whitespace-pre-wrap">${esc(l.text)}</div>`
+  ).join("");
+}
+
+function renderPractice() {
+  const step = state.steps[state.stepIndex];
+  const pct = (state.stepIndex / state.steps.length) * 100;
+  let body = "";
+  if (step.type === "mc") {
+    body = `
+      <h2 class="text-2xl font-black text-slate-800 mb-6">${esc(step.q)}</h2>
+      <div class="grid gap-3">
+        ${step.options.map((o, i) => {
+          let cls = "border-slate-200 hover:bg-slate-50";
+          if (state.feedback) {
+            if (i === step.answer) cls = "border-duo-green bg-green-50";
+            else if (i === state.feedback.picked) cls = "border-duo-red bg-red-50";
+          }
+          return `<button ${state.feedback ? "disabled" : ""} onclick="answerMC(${i})"
+            class="text-left font-bold border-2 rounded-2xl px-5 py-4 ${cls} transition">${esc(o)}</button>`;
+        }).join("")}
+      </div>`;
+  } else {
+    body = `
+      <h2 class="text-2xl font-black text-slate-800 mb-2">🗄️ ${esc(step.prompt)}</h2>
+      <p class="text-slate-500 font-semibold mb-4">Escribe la consulta SQL y pulsa Enter.</p>
+      <div class="term bg-slate-900 rounded-2xl p-4 h-64 overflow-y-auto text-sm" id="termBody">
+        ${termLinesHtml(state.term)}
+        <div class="text-slate-100 flex items-center gap-1">
+          <span class="text-duo-blue">db&gt;</span>
+          <input id="termInput" autocomplete="off" spellcheck="false"
+            class="flex-1 bg-transparent outline-none text-slate-100 caret-duo-blue" />
+        </div>
+      </div>
+      ${state.wrongTries >= 2 ? `<p class="mt-3 text-sm font-bold text-duo-yellow">💡 Pista: ${esc(step.hint)}</p>` : ""}
+      <div id="termMsg" class="mt-2 text-sm font-bold h-5"></div>`;
+  }
+
+  app.innerHTML = `${header()}
+  <main class="max-w-3xl mx-auto px-4 py-6 fade-in">
+    <div class="flex items-center gap-4 mb-6">
+      <div class="flex-1 h-3 bg-slate-200 rounded-full overflow-hidden">
+        <div class="h-full bg-duo-blue transition-all" style="width:${pct}%"></div>
+      </div>
+      <span class="font-black text-lg whitespace-nowrap">${heartRow()}</span>
+    </div>
+    <div class="bg-white rounded-3xl border-2 border-slate-200 p-6 md:p-8">${body}</div>
+  </main>`;
+
+  if (step.type === "sql" && !state.feedback) attachTermInput(state.term, v => submitSQL(v));
+}
+
+function attachTermInput(term, onRun) {
+  const input = document.getElementById("termInput");
+  if (!input) return;
+  const body = document.getElementById("termBody");
+  if (body) body.scrollTop = body.scrollHeight;
+  input.focus();
+  term.histPos = (term.history || []).length;
+  input.addEventListener("keydown", e => {
+    const h = term.history || [];
+    if (e.key === "Enter") { onRun(input.value); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); if (term.histPos > 0) { term.histPos--; input.value = h[term.histPos] || ""; } }
+    else if (e.key === "ArrowDown") { e.preventDefault(); if (term.histPos < h.length - 1) { term.histPos++; input.value = h[term.histPos] || ""; } else { term.histPos = h.length; input.value = ""; } }
+  });
+}
+
+function renderResult(success) {
+  const lesson = state.lesson;
+  app.innerHTML = `${header()}
+  <main class="max-w-3xl mx-auto px-4 py-12 text-center fade-in">
+    <div class="text-6xl mb-4">${success ? "🎉" : "💔"}</div>
+    <h1 class="text-3xl font-black ${success ? "text-duo-green" : "text-duo-red"}">
+      ${success ? "¡Lección completada!" : "Te quedaste sin vidas"}
+    </h1>
+    <p class="text-slate-500 font-semibold mt-2">
+      ${success ? "Conectaste la teoría con consultas reales." : "Repasa la teoría y vuelve a intentarlo."}
+    </p>
+    ${success ? `<div class="flex justify-center gap-6 mt-6">
+      <div class="bg-white border-2 border-slate-200 rounded-2xl px-6 py-4"><div class="text-2xl font-black text-duo-blue">+${state.earned}</div><div class="text-xs font-bold text-slate-400">XP</div></div>
+      <div class="bg-white border-2 border-slate-200 rounded-2xl px-6 py-4"><div class="text-2xl font-black text-duo-yellow">${state.progress.streak}</div><div class="text-xs font-bold text-slate-400">RACHA 🔥</div></div>
+    </div>` : ""}
+    <div class="mt-10 flex justify-center gap-3">
+      <button onclick="goHome()" class="font-black text-slate-500 px-6 py-3 rounded-2xl hover:bg-slate-200">Inicio</button>
+      <button onclick="startLesson(${lesson.id})" class="bg-duo-blue text-white font-black px-8 py-3 rounded-2xl shadow-[0_5px_0_#1899d6] btn-3d">
+        ${success ? "Repetir" : "Intentar de nuevo"}
+      </button>
+    </div>
+  </main>`;
+}
+
+function startSandbox() { state.screen = "sandbox"; state.term = newTerm(); renderSandbox(); }
+function resetSandbox() { state.term = newTerm(); renderSandbox(); }
+function runSandbox(value) {
+  const term = state.term;
+  term.history = term.history || [];
+  term.lines.push({ type: "cmd", text: value });
+  if (String(value).trim()) term.history.push(String(value).trim());
+  const r = runSQL(term.db, value);
+  if (r.out) term.lines.push({ type: "out", text: r.out.replace(/\n$/, ""), error: r.error });
+  renderSandbox();
+}
+function renderSandbox() {
+  const term = state.term;
+  app.innerHTML = `${header()}
+  <main class="max-w-3xl mx-auto px-4 py-6 fade-in">
+    <div class="flex items-center justify-between mb-4">
+      <h1 class="text-2xl font-black text-slate-800">🗄️ SQL libre</h1>
+      <div class="flex gap-2">
+        <button onclick="resetSandbox()" class="text-sm font-bold text-slate-500 px-3 py-2 rounded-xl hover:bg-slate-200">Reiniciar</button>
+        <button onclick="goHome()" class="text-sm font-bold text-slate-500 px-3 py-2 rounded-xl hover:bg-slate-200">Inicio</button>
+      </div>
+    </div>
+    <p class="text-slate-500 font-semibold mb-3">Consulta la base de datos sin límites. Prueba: <code class="term bg-slate-200 px-1 rounded">.tables</code>, <code class="term bg-slate-200 px-1 rounded">SELECT * FROM clientes</code>. Usa ↑ y ↓ para el historial.</p>
+    <div class="term bg-slate-900 rounded-2xl p-4 h-[28rem] overflow-y-auto text-sm" id="termBody">
+      ${termLinesHtml(term)}
+      <div class="text-slate-100 flex items-center gap-1">
+        <span class="text-duo-blue">db&gt;</span>
+        <input id="termInput" autocomplete="off" spellcheck="false"
+          class="flex-1 bg-transparent outline-none text-slate-100 caret-duo-blue" />
+      </div>
+    </div>
+  </main>`;
+  attachTermInput(term, v => runSandbox(v));
+}
+
+/* ---------- 7. LÓGICA DE JUEGO ---------- */
+function goHome() { state.screen = "home"; renderHome(); }
+
+function startLesson(id) {
+  state.lesson = LESSONS.find(l => l.id === id);
+  state.cardIndex = 0;
+  state.steps = state.lesson.steps;
+  state.stepIndex = 0;
+  state.hearts = 3;
+  state.earned = 0;
+  state.feedback = null;
+  state.wrongTries = 0;
+  state.term = newTerm();
+  state.screen = "theory";
+  renderTheory();
+}
+function prevCard() { if (state.cardIndex > 0) { state.cardIndex--; renderTheory(); } }
+function nextCard() {
+  if (state.cardIndex < state.lesson.theory.length - 1) { state.cardIndex++; renderTheory(); }
+  else { state.screen = "practice"; state.term = newTerm(); state.stepIndex = 0; state.wrongTries = 0; renderPractice(); }
+}
+
+function answerMC(i) {
+  if (state.feedback) return;
+  const step = state.steps[state.stepIndex];
+  state.feedback = { picked: i };
+  if (i === step.answer) state.earned += 10;
+  else state.hearts--;
+  renderPractice();
+  setTimeout(() => {
+    if (state.hearts <= 0) { state.feedback = null; renderResult(false); return; }
+    state.feedback = null;
+    state.stepIndex++;
+    state.wrongTries = 0;
+    if (state.stepIndex >= state.steps.length) finishLesson();
+    else renderPractice();
+  }, i === step.answer ? 850 : 1650);
+}
+
+function submitSQL(value) {
+  if (state.feedback) return;
+  const step = state.steps[state.stepIndex];
+  const term = state.term;
+  term.history = term.history || [];
+  term.lines.push({ type: "cmd", text: value });
+  if (String(value).trim()) term.history.push(String(value).trim());
+  const r = runSQL(term.db, value);
+  if (r.out) term.lines.push({ type: "out", text: r.out.replace(/\n$/, ""), error: r.error });
+
+  const ctx = { sql: value, tipo: r.tipo, resultado: { columnas: r.columns, filas: r.rows }, db: term.db, out: r.out };
+  const passed = !r.error && typeof step.check === "function" && step.check(ctx);
+
+  if (passed) {
+    state.earned += 15;
+    state.feedback = { term: true };
+    renderPractice();
+    setTimeout(() => {
+      state.feedback = null;
+      state.stepIndex++;
+      state.wrongTries = 0;
+      if (state.stepIndex >= state.steps.length) finishLesson();
+      else renderPractice();
+    }, 700);
+  } else {
+    state.wrongTries++;
+    state.feedback = null;
+    renderPractice();
+    const msg = document.getElementById("termMsg");
+    if (msg) {
+      msg.textContent = r.error ? "⚠️ La consulta dio un error. Revisa la sintaxis." : "❌ Aún no. Prueba otra vez con la consulta correcta.";
+      msg.className = "mt-2 text-sm font-bold h-5 text-duo-red";
+    }
+  }
+}
+
+function finishLesson() {
+  const p = state.progress;
+  if (!p.completed.includes(state.lesson.id)) p.completed.push(state.lesson.id);
+  p.xp += state.earned;
+  touchStreak();
+  saveProgress();
+  renderResult(true);
+}
+function resetAll() {
+  if (confirm("¿Borrar XP, rachas y lecciones completadas?")) {
+    state.progress = defaultProgress();
+    saveProgress();
+    renderHome();
+  }
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && state.screen === "theory") nextCard();
+});
+
+renderHome();
+</script>
+</body>
+</html>
