@@ -840,7 +840,7 @@ let state = {
   lesson: null, cardIndex: 0,
   steps: [], stepIndex: 0, hearts: 3, earned: 0,
   term: null, wrongTries: 0,
-  feedback: null
+  feedback: null, revealed: false, revealData: null
 };
 
 /* ---------- 6. VISTAS ---------- */
@@ -956,6 +956,27 @@ function renderTheory() {
 
 function heartRow() { let h = ""; for (let i = 0; i < 3; i++) h += i < state.hearts ? "❤️" : "🤍"; return h; }
 
+function hintCommand(step) {
+  const m = String(step.hint || "").match(/Escribe:\s*(.+)$/);
+  return m ? m[1].trim() : String(step.hint || "").trim();
+}
+function explainError(r) {
+  if (r && r.error) {
+    const msg = String(r.out || "").replace(/^ERROR:\s*/, "").trim();
+    return msg || "La consulta produjo un error.";
+  }
+  return "La consulta se ejecutó, pero no devolvió el resultado esperado.";
+}
+function advanceStep() {
+  state.revealed = false;
+  state.revealData = null;
+  state.feedback = null;
+  state.wrongTries = 0;
+  state.stepIndex++;
+  if (state.stepIndex >= state.steps.length) finishLesson();
+  else renderPractice();
+}
+
 function termLinesHtml(term) {
   return term.lines.map(l =>
     l.type === "cmd"
@@ -983,18 +1004,26 @@ function renderPractice() {
         }).join("")}
       </div>`;
   } else {
+    const revealPanel = state.revealed && state.revealData ? `
+      <div class="mt-4 rounded-2xl border-2 border-duo-yellow bg-yellow-50 p-4">
+        <p class="font-black text-slate-800 mb-1">✅ La respuesta correcta era:</p>
+        <pre class="term bg-slate-900 text-duo-green rounded-lg px-3 py-2 text-sm overflow-x-auto whitespace-pre-wrap">${esc(state.revealData.correcta)}</pre>
+        <p class="mt-2 text-sm font-bold text-duo-red">❌ Error: ${esc(state.revealData.error)}</p>
+      </div>
+      <button onclick="advanceStep()" class="mt-4 w-full bg-duo-green text-white font-black px-8 py-3 rounded-2xl shadow-[0_5px_0_#46a302] btn-3d">Continuar →</button>` : "";
     body = `
       <h2 class="text-2xl font-black text-slate-800 mb-2">🗄️ ${esc(step.prompt)}</h2>
-      <p class="text-slate-500 font-semibold mb-4">Escribe la consulta SQL y pulsa Enter.</p>
+      <p class="text-slate-500 font-semibold mb-4">${state.revealed ? "Este reto se reveló. Pulsa Continuar para seguir." : "Escribe la consulta SQL y pulsa Enter."}</p>
       <div class="term bg-slate-900 rounded-2xl p-4 h-64 overflow-y-auto text-sm" id="termBody">
         ${termLinesHtml(state.term)}
-        <div class="text-slate-100 flex items-center gap-1">
+        ${state.revealed ? `<div class="text-slate-500 text-xs pt-2">— reto revelado —</div>` : `<div class="text-slate-100 flex items-center gap-1">
           <span class="text-duo-blue">db&gt;</span>
           <input id="termInput" autocomplete="off" spellcheck="false"
             class="flex-1 bg-transparent outline-none text-slate-100 caret-duo-blue" />
-        </div>
+        </div>`}
       </div>
-      ${state.wrongTries >= 2 ? `<p class="mt-3 text-sm font-bold text-duo-yellow">💡 Pista: ${esc(step.hint)}</p>` : ""}
+      ${state.wrongTries >= 2 && !state.revealed ? `<p class="mt-3 text-sm font-bold text-duo-yellow">💡 Pista: ${esc(step.hint)}</p>` : ""}
+      ${revealPanel}
       <div id="termMsg" class="mt-2 text-sm font-bold h-5"></div>`;
   }
 
@@ -1009,7 +1038,7 @@ function renderPractice() {
     <div class="bg-white rounded-3xl border-2 border-slate-200 p-6 md:p-8">${body}</div>
   </main>`;
 
-  if (step.type === "sql" && !state.feedback) attachTermInput(state.term, v => submitSQL(v));
+  if (step.type === "sql" && !state.feedback && !state.revealed) attachTermInput(state.term, v => submitSQL(v));
 }
 
 function attachTermInput(term, onRun) {
@@ -1098,6 +1127,8 @@ function startLesson(id) {
   state.earned = 0;
   state.feedback = null;
   state.wrongTries = 0;
+  state.revealed = false;
+  state.revealData = null;
   state.term = newTerm();
   state.screen = "theory";
   renderTheory();
@@ -1105,7 +1136,7 @@ function startLesson(id) {
 function prevCard() { if (state.cardIndex > 0) { state.cardIndex--; renderTheory(); } }
 function nextCard() {
   if (state.cardIndex < state.lesson.theory.length - 1) { state.cardIndex++; renderTheory(); }
-  else { state.screen = "practice"; state.term = newTerm(); state.stepIndex = 0; state.wrongTries = 0; renderPractice(); }
+  else { state.screen = "practice"; state.term = newTerm(); state.stepIndex = 0; state.wrongTries = 0; state.revealed = false; state.revealData = null; renderPractice(); }
 }
 
 function answerMC(i) {
@@ -1142,21 +1173,21 @@ function submitSQL(value) {
     state.earned += 15;
     state.feedback = { term: true };
     renderPractice();
-    setTimeout(() => {
-      state.feedback = null;
-      state.stepIndex++;
-      state.wrongTries = 0;
-      if (state.stepIndex >= state.steps.length) finishLesson();
-      else renderPractice();
-    }, 700);
+    setTimeout(() => { advanceStep(); }, 700);
   } else {
     state.wrongTries++;
     state.feedback = null;
+    if (state.wrongTries >= 3) {
+      state.revealed = true;
+      state.revealData = { correcta: hintCommand(step), error: explainError(r) };
+    }
     renderPractice();
-    const msg = document.getElementById("termMsg");
-    if (msg) {
-      msg.textContent = r.error ? "⚠️ La consulta dio un error. Revisa la sintaxis." : "❌ Aún no. Prueba otra vez con la consulta correcta.";
-      msg.className = "mt-2 text-sm font-bold h-5 text-duo-red";
+    if (!state.revealed) {
+      const msg = document.getElementById("termMsg");
+      if (msg) {
+        msg.textContent = r.error ? "⚠️ La consulta dio un error. Revisa la sintaxis." : "❌ Aún no. Prueba otra vez con la consulta correcta.";
+        msg.className = "mt-2 text-sm font-bold h-5 text-duo-red";
+      }
     }
   }
 }
