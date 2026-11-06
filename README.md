@@ -42,16 +42,16 @@ Es una app **autocontenida en un solo archivo HTML** (`sql-duo.html`): no necesi
 
 | # | Lección | Contenido |
 |---|---------|-----------|
-| 1 | Primeros pasos | `SELECT *`, `.tables` |
+| 1 | Primeros pasos | explorar con `.tables` y `SELECT *` |
 | 2 | Elegir columnas | proyección |
-| 3 | Filtrar | `WHERE`, operadores, `AND`/`OR` |
-| 4 | Ordenar y limitar | `ORDER BY`, `LIMIT` |
+| 3 | Filtrar | `WHERE`, operadores, `AND`/`OR`/`NOT` |
+| 4 | Ordenar y limitar | `ORDER BY` (ASC/DESC), `LIMIT` |
 | 5 | Valores únicos | `DISTINCT` |
 | 6 | Insertar, actualizar y borrar | `INSERT`, `UPDATE`, `DELETE` |
-| 7 | Agrupar y contar | `COUNT`, `SUM`, `GROUP BY` |
-| 8 | Patrones y NULL | `LIKE`, `IS NULL` |
-| 9 | Combinar tablas | `JOIN` |
-| 10 | Crear tablas | `CREATE TABLE`, tipos y claves |
+| 7 | Agrupar y contar | `COUNT`, `SUM`, `AVG`, `MAX`, `GROUP BY` |
+| 8 | Patrones y NULL | `LIKE`, `IS NULL`, `IS NOT NULL` |
+| 9 | Combinar tablas | `JOIN ... ON` |
+| 10 | Crear tablas | `CREATE TABLE`, tipos, claves y `DROP TABLE` |
 
 ## Cómo usarla
 

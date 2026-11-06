@@ -41,6 +41,14 @@
 
 /* ---------- 1. TEORÍA: cada tema con la estructura obligatoria ---------- */
 const THEORY = {
+  explorar: {
+    name: "Explorar la base", tagline: "Mira qué tablas existen",
+    what: "Antes de consultar datos conviene saber qué tablas hay. Los metacomandos son atajos del cliente que empiezan por punto: .tables lista las tablas, .schema muestra su estructura y .help la ayuda.",
+    how: "No son SQL: no llevan SELECT ni FROM. El cliente los interpreta y consulta el catálogo interno de la base de datos.",
+    real: "Al abrir una base desconocida, ejecutar .tables y .schema para orientarte antes de escribir consultas.",
+    syntax: ".tables   |   .schema   |   .help",
+    examples: [{ cmd: ".tables", out: "clientes   pedidos   productos" }]
+  },
   select: {
     name: "SELECT", tagline: "Consulta filas de una tabla",
     what: "SELECT es la instrucción para leer datos. 'SELECT * FROM tabla' devuelve todas las columnas y todas las filas de esa tabla.",
@@ -194,11 +202,13 @@ const THEORY = {
 const LESSONS = [
   {
     id: 0, title: "Primeros pasos", icon: "🗃️", color: "duo-green",
-    theory: ["select"],
+    theory: ["explorar", "select"],
     steps: [
+      { type: "mc", q: "Los comandos que empiezan por punto (como '.tables') sirven para...", options: ["Consultar las filas de una tabla", "Explorar la estructura de la base", "Crear una tabla nueva", "Borrar registros"], answer: 1, explain: "Son metacomandos del cliente: sirven para explorar la base, no para consultar filas." },
+      { type: "sql", prompt: "Muestra qué tablas existen en la base de datos (metacomando).", hint: "Escribe: .tables", check: ctx => ctx.tipo === "TABLES" && /clientes/.test(ctx.out) && /pedidos/.test(ctx.out) && /productos/.test(ctx.out) },
       { type: "mc", q: "¿Qué devuelve 'SELECT * FROM clientes'?", options: ["Solo una columna", "Todas las columnas y filas de clientes", "Borra la tabla clientes", "Crea la tabla clientes"], answer: 1, explain: "* significa todas las columnas; FROM clientes, todas sus filas." },
-      { type: "sql", prompt: "Lista los nombres de las tablas de la base de datos.", hint: "Escribe: .tables", check: ctx => ctx.tipo === "TABLES" && /clientes/.test(ctx.out) && /pedidos/.test(ctx.out) },
       { type: "sql", prompt: "Muestra todas las filas de la tabla 'clientes'.", hint: "Escribe: SELECT * FROM clientes", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.columnas.length === 4 && ctx.resultado.filas.length === 5 },
+      { type: "sql", prompt: "Ahora muestra todas las filas de la tabla 'productos'.", hint: "Escribe: SELECT * FROM productos", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.columnas.length === 5 && ctx.resultado.filas.length === 4 },
       { type: "mc", q: "¿Qué significa el * en 'SELECT *'?", options: ["Multiplicar", "Seleccionar todas las columnas", "Contar las filas", "Borrar la tabla"], answer: 1, explain: "* es el comodín de 'todas las columnas'." }
     ]
   },
@@ -208,7 +218,8 @@ const LESSONS = [
     steps: [
       { type: "mc", q: "¿Cómo pides solo la columna nombre de clientes?", options: ["SELECT nombre FROM clientes", "SELECT clientes.nombre", "SELECT *", "GET nombre"], answer: 0, explain: "Se listan las columnas deseadas separadas por comas entre SELECT y FROM." },
       { type: "sql", prompt: "Muestra solo la columna 'nombre' de clientes.", hint: "Escribe: SELECT nombre FROM clientes", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.columnas.length === 1 && ctx.resultado.columnas[0] === "nombre" && ctx.resultado.filas.length === 5 },
-      { type: "sql", prompt: "Muestra las columnas 'nombre' y 'ciudad' de clientes.", hint: "Escribe: SELECT nombre, ciudad FROM clientes", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.columnas.length === 2 && ctx.resultado.columnas.includes("nombre") && ctx.resultado.columnas.includes("ciudad") }
+      { type: "sql", prompt: "Muestra las columnas 'nombre' y 'ciudad' de clientes.", hint: "Escribe: SELECT nombre, ciudad FROM clientes", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.columnas.length === 2 && ctx.resultado.columnas.includes("nombre") && ctx.resultado.columnas.includes("ciudad") },
+      { type: "sql", prompt: "Muestra las columnas 'nombre' y 'precio' de productos.", hint: "Escribe: SELECT nombre, precio FROM productos", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.columnas.length === 2 && ctx.resultado.columnas.includes("nombre") && ctx.resultado.columnas.includes("precio") && ctx.resultado.filas.length === 4 }
     ]
   },
   {
@@ -219,6 +230,8 @@ const LESSONS = [
       { type: "sql", prompt: "Muestra los clientes cuya ciudad es 'Madrid'.", hint: "Escribe: SELECT * FROM clientes WHERE ciudad = 'Madrid'", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 2 },
       { type: "sql", prompt: "Muestra los clientes con edad mayor que 30.", hint: "Escribe: SELECT * FROM clientes WHERE edad > 30", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 2 },
       { type: "sql", prompt: "Muestra los clientes de Madrid mayores de 20 años.", hint: "Escribe: SELECT * FROM clientes WHERE ciudad = 'Madrid' AND edad > 20", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 2 },
+      { type: "sql", prompt: "Muestra los clientes de Madrid o de Lima.", hint: "Escribe: SELECT * FROM clientes WHERE ciudad = 'Madrid' OR ciudad = 'Lima'", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 3 },
+      { type: "sql", prompt: "Muestra los clientes que NO son de Bogotá.", hint: "Escribe: SELECT * FROM clientes WHERE NOT ciudad = 'Bogota'", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 3 && !ctx.resultado.filas.some(r => r.includes("Bogota")) },
       { type: "mc", q: "¿Qué exige el operador AND entre dos condiciones?", options: ["Que se cumpla al menos una", "Que se cumplan ambas", "Que no se cumpla ninguna", "Que sean iguales"], answer: 1, explain: "AND = las dos condiciones deben ser verdaderas." }
     ]
   },
@@ -228,6 +241,9 @@ const LESSONS = [
     steps: [
       { type: "mc", q: "¿Cómo ordenas de mayor a menor por precio?", options: ["ORDER BY precio ASC", "ORDER BY precio DESC", "SORT precio", "GROUP BY precio"], answer: 1, explain: "DESC ordena de mayor a menor; ASC (por defecto) de menor a mayor." },
       { type: "sql", prompt: "Muestra los productos ordenados por precio de mayor a menor.", hint: "Escribe: SELECT * FROM productos ORDER BY precio DESC", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 4 && ctx.resultado.filas[0][1] === "Monitor" },
+      { type: "sql", prompt: "Ahora ordénalos de menor a mayor.", hint: "Escribe: SELECT * FROM productos ORDER BY precio ASC", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 4 && ctx.resultado.filas[0][1] === "Raton" },
+      { type: "sql", prompt: "Muestra solo los 2 primeros clientes, sin ordenar.", hint: "Escribe: SELECT * FROM clientes LIMIT 2", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 2 && ctx.resultado.filas[0][0] === 1 },
+      { type: "mc", q: "¿Qué hace 'LIMIT 3'?", options: ["Ordena 3 columnas", "Devuelve solo las 3 primeras filas", "Borra 3 filas", "Cuenta 3 filas"], answer: 1, explain: "LIMIT recorta el resultado a las N primeras filas." },
       { type: "sql", prompt: "Muestra solo los 2 productos más caros.", hint: "Escribe: SELECT * FROM productos ORDER BY precio DESC LIMIT 2", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 2 && ctx.resultado.filas[0][1] === "Monitor" }
     ]
   },
@@ -246,9 +262,11 @@ const LESSONS = [
     steps: [
       { type: "mc", q: "¿Qué instrucción añade una fila nueva?", options: ["UPDATE", "INSERT INTO", "DELETE FROM", "SELECT"], answer: 1, explain: "INSERT INTO añade registros; UPDATE modifica y DELETE borra." },
       { type: "sql", prompt: "Inserta un cliente: id 6, nombre 'Nora', ciudad 'Cali', edad 25.", hint: "Escribe: INSERT INTO clientes VALUES (6, 'Nora', 'Cali', 25)", check: ctx => ctx.tipo === "INSERT" && ctx.db.tables.clientes.rows.some(r => r.nombre === "Nora") },
+      { type: "sql", prompt: "Inserta un producto: id 5, nombre 'Auriculares', precio 25, stock 10, descuento NULL.", hint: "Escribe: INSERT INTO productos VALUES (5, 'Auriculares', 25, 10, NULL)", check: ctx => ctx.tipo === "INSERT" && ctx.db.tables.productos.rows.some(r => r.nombre === "Auriculares" && r.precio === 25) },
       { type: "sql", prompt: "Sube a 60 el precio del producto con id 4.", hint: "Escribe: UPDATE productos SET precio = 60 WHERE id = 4", check: ctx => ctx.tipo === "UPDATE" && ctx.db.tables.productos.rows.find(r => r.id === 4).precio === 60 },
       { type: "sql", prompt: "Elimina el pedido con id 6.", hint: "Escribe: DELETE FROM pedidos WHERE id = 6", check: ctx => ctx.tipo === "DELETE" && !ctx.db.tables.pedidos.rows.some(r => r.id === 6) },
-      { type: "mc", q: "¿Qué pasa si olvidas el WHERE en un UPDATE?", options: ["No cambia nada", "Actualiza todas las filas", "Da error siempre", "Borra la tabla"], answer: 1, explain: "Sin WHERE, la condición es siempre cierta y afecta a todas las filas." }
+      { type: "mc", q: "¿Qué pasa si olvidas el WHERE en un UPDATE?", options: ["No cambia nada", "Actualiza todas las filas", "Da error siempre", "Borra la tabla"], answer: 1, explain: "Sin WHERE, la condición es siempre cierta y afecta a todas las filas." },
+      { type: "mc", q: "¿Qué pasa si olvidas el WHERE en un DELETE?", options: ["No borra nada", "Borra todas las filas de la tabla", "Da error siempre", "Borra la tabla entera"], answer: 1, explain: "Sin WHERE se borran todas las filas, pero la tabla sigue existiendo." }
     ]
   },
   {
@@ -258,6 +276,8 @@ const LESSONS = [
       { type: "mc", q: "¿Qué devuelve 'SELECT COUNT(*) FROM clientes'?", options: ["Los nombres", "El número de filas de clientes", "La primera fila", "La tabla entera"], answer: 1, explain: "COUNT(*) cuenta cuántas filas hay." },
       { type: "sql", prompt: "Cuenta cuántos clientes hay.", hint: "Escribe: SELECT COUNT(*) FROM clientes", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas[0][0] === 5 },
       { type: "sql", prompt: "Suma todos los precios de los productos.", hint: "Escribe: SELECT SUM(precio) FROM productos", check: ctx => ctx.tipo === "SELECT" && Math.abs(ctx.resultado.filas[0][0] - 323.4) < 0.01 },
+      { type: "sql", prompt: "Calcula el precio medio de los productos.", hint: "Escribe: SELECT AVG(precio) FROM productos", check: ctx => ctx.tipo === "SELECT" && Math.abs(ctx.resultado.filas[0][0] - 80.85) < 0.01 },
+      { type: "sql", prompt: "Muestra el precio máximo de los productos.", hint: "Escribe: SELECT MAX(precio) FROM productos", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas[0][0] === 199 },
       { type: "sql", prompt: "Cuenta cuántos pedidos hay por cliente.", hint: "Escribe: SELECT cliente_id, COUNT(*) FROM pedidos GROUP BY cliente_id", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.columnas.includes("cliente_id") && ctx.resultado.filas.length === 4 },
       { type: "mc", q: "¿Para qué sirve GROUP BY?", options: ["Ordenar filas", "Resumir por categorías usando agregados", "Eliminar duplicados", "Filtrar filas"], answer: 1, explain: "GROUP BY forma grupos y calcula agregados dentro de cada uno." }
     ]
@@ -269,8 +289,10 @@ const LESSONS = [
       { type: "mc", q: "En LIKE, ¿qué representa el símbolo %?", options: ["Un solo carácter", "Cualquier cantidad de caracteres", "Un número", "Nada"], answer: 1, explain: "% coincide con 'cualquier cosa'; _ coincide con un único carácter." },
       { type: "sql", prompt: "Muestra los clientes cuyo nombre empieza por 'A'.", hint: "Escribe: SELECT * FROM clientes WHERE nombre LIKE 'A%'", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 1 },
       { type: "sql", prompt: "Muestra los clientes cuyo nombre contiene una 'a'.", hint: "Escribe: SELECT * FROM clientes WHERE nombre LIKE '%a%'", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 3 },
+      { type: "sql", prompt: "Muestra los nombres que terminan en 'a'.", hint: "Escribe: SELECT nombre FROM clientes WHERE nombre LIKE '%a'", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 3 },
       { type: "mc", q: "¿Cómo se comprueba que una columna no tiene valor?", options: ["WHERE col = NULL", "WHERE col IS NULL", "WHERE col = 0", "WHERE col = ''"], answer: 1, explain: "NULL se comprueba con IS NULL, nunca con = NULL." },
-      { type: "sql", prompt: "Muestra los productos que no tienen descuento (descuento IS NULL).", hint: "Escribe: SELECT nombre FROM productos WHERE descuento IS NULL", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 2 }
+      { type: "sql", prompt: "Muestra los productos que no tienen descuento (descuento IS NULL).", hint: "Escribe: SELECT nombre FROM productos WHERE descuento IS NULL", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 2 },
+      { type: "sql", prompt: "Muestra los productos que SÍ tienen descuento.", hint: "Escribe: SELECT nombre FROM productos WHERE descuento IS NOT NULL", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 2 }
     ]
   },
   {
@@ -278,7 +300,9 @@ const LESSONS = [
     theory: ["join"],
     steps: [
       { type: "mc", q: "¿Qué hace un JOIN?", options: ["Borra una tabla", "Combina filas de dos tablas según una condición ON", "Ordena por dos columnas", "Cuenta filas"], answer: 1, explain: "JOIN une tablas por una clave común indicada en el ON." },
+      { type: "mc", q: "¿Qué indica la cláusula ON en un JOIN?", options: ["Qué columnas mostrar", "La condición que empareja filas de las dos tablas", "El orden del resultado", "Cuántas filas devolver"], answer: 1, explain: "ON define la condición de emparejamiento; normalmente iguala una clave de cada tabla." },
       { type: "sql", prompt: "Muestra el nombre del cliente y la fecha de cada pedido.", hint: "Escribe: SELECT clientes.nombre, pedidos.fecha FROM pedidos JOIN clientes ON pedidos.cliente_id = clientes.id", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.columnas.length === 2 && ctx.resultado.filas.length === 6 },
+      { type: "sql", prompt: "Muestra el nombre del producto y la cantidad de cada pedido.", hint: "Escribe: SELECT productos.nombre, pedidos.cantidad FROM pedidos JOIN productos ON pedidos.producto_id = productos.id", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.columnas.length === 2 && ctx.resultado.filas.length === 6 },
       { type: "sql", prompt: "Cuenta los pedidos agrupados por nombre de cliente.", hint: "Escribe: SELECT clientes.nombre, COUNT(*) FROM pedidos JOIN clientes ON pedidos.cliente_id = clientes.id GROUP BY clientes.nombre", check: ctx => ctx.tipo === "SELECT" && ctx.resultado.filas.length === 4 }
     ]
   },
@@ -287,8 +311,11 @@ const LESSONS = [
     theory: ["createtable", "tipos", "claves"],
     steps: [
       { type: "mc", q: "¿Qué tipo usarías para el precio de un producto?", options: ["TEXT", "INTEGER", "REAL", "DATE"], answer: 2, explain: "REAL guarda números con decimales, ideal para precios." },
-      { type: "sql", prompt: "Crea una tabla 'etiquetas' con columnas id INTEGER y texto TEXT.", hint: "Escribe: CREATE TABLE etiquetas (id INTEGER, texto TEXT)", check: ctx => ctx.tipo === "CREATE" && !!ctx.db.tables.etiquetas && ctx.db.tables.etiquetas.columns.join(",") === "id,texto" },
-      { type: "sql", prompt: "Inserta la etiqueta (1, 'nuevo') en la tabla 'etiquetas'.", hint: "Escribe: INSERT INTO etiquetas VALUES (1, 'nuevo')", check: ctx => ctx.tipo === "INSERT" && ctx.db.tables.etiquetas.rows.length === 1 && ctx.db.tables.etiquetas.rows[0].texto === "nuevo" }
+      { type: "mc", q: "¿Qué garantiza una PRIMARY KEY?", options: ["Que la columna no se repite e identifica cada fila", "Que la columna puede ser NULL", "Que la tabla se borra sola", "Que se ordena la tabla"], answer: 0, explain: "La PRIMARY KEY identifica cada fila de forma única, así que no admite valores repetidos." },
+      { type: "sql", prompt: "Crea una tabla 'etiquetas' con id INTEGER PRIMARY KEY y texto TEXT.", hint: "Escribe: CREATE TABLE etiquetas (id INTEGER PRIMARY KEY, texto TEXT)", check: ctx => ctx.tipo === "CREATE" && !!ctx.db.tables.etiquetas && ctx.db.tables.etiquetas.columns.join(",") === "id,texto" },
+      { type: "sql", prompt: "Inserta la etiqueta (1, 'nuevo') en la tabla 'etiquetas'.", hint: "Escribe: INSERT INTO etiquetas VALUES (1, 'nuevo')", check: ctx => ctx.tipo === "INSERT" && ctx.db.tables.etiquetas.rows.length === 1 && ctx.db.tables.etiquetas.rows[0].texto === "nuevo" },
+      { type: "sql", prompt: "Elimina por completo la tabla 'etiquetas'.", hint: "Escribe: DROP TABLE etiquetas", check: ctx => ctx.tipo === "DROP" && !ctx.db.tables.etiquetas },
+      { type: "mc", q: "¿Cuál es la diferencia entre DROP TABLE y DELETE FROM?", options: ["Son iguales", "DROP borra la tabla entera; DELETE borra filas", "DELETE borra la tabla; DROP borra filas", "DROP solo ordena la tabla"], answer: 1, explain: "DROP TABLE elimina la estructura y los datos; DELETE FROM elimina filas pero deja la tabla." }
     ]
   }
 ];
